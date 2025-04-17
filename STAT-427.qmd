@@ -46,9 +46,9 @@ library(boot)
 library(pROC)
 library(ROCR)
 library(GGally)
-
+library(car)
 library(readr)
-Global_Tobacco_Surveillance_System <- read_csv("C:/Users/cmpas/Downloads/Global_Tobacco_Surveillance_System__GTSS__-_Global_Youth_Tobacco_Survey__GYTS__20250417.csv")
+Global_Tobacco_Surveillance_System <- read_csv("Global_Tobacco_Surveillance_System__GTSS__-_Global_Youth_Tobacco_Survey__GYTS__20250417.csv")
 
 # Cleaning up the data set with revelent variables only
 
@@ -132,6 +132,13 @@ summary(linear_model)
 
 ```
 
+We used a multiple linear regression model to predict the percentage of youth tobacco use based on year, region, survey topic, MPOWER policy, sample size, and gender. The model revealed that tobacco use has significantly declined over time (p < 0.001). Regional differences were also notable, with the European and Western Pacific regions showing higher predicted values. Topics related to prevalence and exposure to pro-tobacco advertising had large negative coefficients, suggesting these categories often capture anti-smoking efforts. Gender differences were also evident—girls showed significantly lower usage rates.
+
+The model had an RMSE of approximately 16 and an adjusted R² of 0.639, indicating a reasonably good fit. No multicollinearity issues were detected (all VIFs < 1.2).
+
+
+
+
 - Polynomial Regression (pending feature transformation)
 
 ```{r}
@@ -141,6 +148,10 @@ poly_model <- lm(Data_Value ~ poly(Year, 2) + WHO_Region + Topic + Mpower + Samp
 summary(poly_model)
 
 ```
+
+To capture potential nonlinear trends over time, we fitted a second-degree polynomial regression model using year, region, topic, MPOWER policy, sample size, and sex. The results showed that both linear and quadratic terms for year were statistically significant, suggesting a nonlinear decline in tobacco use over time.
+
+The performance was very similar to the linear model, with an RMSE around 16 and adjusted R² of 0.640. While the improvement was slight, it indicated that polynomial transformation may better account for long-term trends in smoking behavior, particularly in earlier vs. later survey years.
 
 - Ridge & Lasso Regression 
 
@@ -164,6 +175,12 @@ coef(lasso_cv, s = "lambda.min")
 
 
 ```
+
+To address potential multicollinearity and improve prediction, we applied regularization techniques. Ridge regression shrinks coefficients without eliminating any, while lasso can reduce some coefficients to zero for variable selection.
+
+The ridge model selected a lambda (penalty) that minimized cross-validation error at λ ≈ 1.69. The lasso model chose λ ≈ 0.025 and eliminated several less informative variables, simplifying interpretation. Key predictors retained included year, region, topic, and sex, with results closely matching those from ordinary least squares.
+
+These models provided comparable predictive performance while reducing overfitting risks, especially useful for handling high-dimensional survey data with many categorical variables.
 
 
 - Principal Components Regression (PCR)
@@ -189,6 +206,13 @@ summary(pcr_model)
 
 ```
 
+Principal Components Regression was used to reduce dimensionality and uncover latent patterns among correlated predictors. We standardized predictors and performed 10-fold cross-validation to select the optimal number of components.
+
+The model explained around 64% of the variance in tobacco use with approximately 10 components. While PCR did not outperform simpler linear models in RMSE, it helped validate which combinations of variables contributed most to the outcome, particularly across policy, region, and topic dimensions.
+
+PCR was useful for confirming robustness and ensuring multicollinearity was properly addressed in a reduced feature space.
+
+
 - Partial Least Squares Regression (PLSR)
 
 ```{r}
@@ -207,7 +231,11 @@ summary(plsr_model)
 
 ```
 
+We used PLSR to model youth tobacco use while simultaneously reducing dimensionality and maximizing covariance between predictors and the outcome. Unlike PCR, which focuses only on variance in predictors, PLSR optimizes for prediction.
 
+With just a few components, the model achieved similar performance to PCR, reaching about 64% variance explained and RMSE ≈ 16. Key drivers included year, region, and topic. PLSR confirmed patterns seen in other regression models while offering a more targeted dimensionality reduction.
+
+This method was particularly effective in handling the many categorical predictors and maintaining interpretability.
 
 
 **Classification Methods**
@@ -222,6 +250,12 @@ logit_model <- glm(high_risk ~ Year + WHO_Region + Topic + Mpower + Sample_Size 
 summary(logit_model)
 
 ```
+
+To classify whether a survey site was “high-risk” (≥15% youth tobacco use), we used logistic regression with predictors including year, region, topic, MPOWER policy, sample size, and sex.
+
+The model performed strongly with an accuracy of 79.3%, AUC of 0.864, and precision of 68.7%. Youth tobacco risk decreased over time, with significant regional differences—especially higher odds in the European Region. Topics related to prevalence and exposure to tobacco advertising had strong negative associations, and girls were significantly less likely to be in the high-risk group.
+
+Logistic regression offered a clear, interpretable framework for identifying key risk factors influencing global youth tobacco patterns.
 
 - K-Nearest Neighbors (KNN)
 
@@ -239,6 +273,12 @@ knn_model
 
 ```
 
+We applied KNN to classify high-risk survey sites based on policy and demographic variables. After tuning with 10-fold cross-validation, the optimal number of neighbors was k = 5.
+
+The model achieved an accuracy of 64.7%, which was notably lower than logistic regression. As a non-parametric method, KNN struggled with the high dimensionality and categorical structure of the dataset, leading to reduced interpretability and performance.
+
+While KNN was useful as a comparison benchmark, it was not the most effective method for this problem due to the complexity and size of the data.
+
 - Linear Discriminant Analysis (LDA)
 
 ```{r}
@@ -253,6 +293,13 @@ mean(lda_pred == lda_data$high_risk)
 
 ```
 
+LDA was used to classify sites as high-risk based on year, region, MPOWER policy, and sample size. The model achieved a classification accuracy of 79.5%, matching the performance of logistic regression.
+
+LDA worked well due to the relatively clean separation between high and low-risk groups in the data. It confirmed that regional differences, policy indicators, and time trends were strong signals for classification.
+
+As a linear method, LDA offered both strong predictive power and interpretability, making it one of the most effective classification techniques in our analysis.
+
+
 - Quadratic Discriminant Analysis (QDA)
 
 ```{r}
@@ -262,6 +309,12 @@ qda_pred <- predict(qda_model)$class
 mean(qda_pred == lda_data$high_risk)
 
 ```
+
+QDA was applied using the same predictors as LDA to allow for more flexible, nonlinear class boundaries. Interestingly, it produced the same classification accuracy of 79.5% as LDA.
+
+This suggests that the relationship between predictors and high-risk classification is largely linear in structure. QDA did not offer additional predictive power over LDA, but it served as a useful check on model assumptions.
+
+While QDA allows for greater complexity, the simplicity and interpretability of LDA made it the preferred discriminant method for this dataset.
 
 - Classification Trees
 
@@ -280,6 +333,12 @@ plot(tree_model)
 text(tree_model, pretty = 0)
 
 ```
+
+We used classification trees to identify simple decision rules for classifying high-risk sites. The tree model relied heavily on the “Topic” variable and produced only two terminal nodes, highlighting the model's simplicity.
+
+The tree achieved a misclassification rate of 20.5%, which is slightly worse than logistic regression and LDA. However, its interpretability was excellent, providing clear if-then rules that are easy to communicate to non-technical stakeholders.
+
+While trees lacked the predictive strength of other methods, they offered a useful visual summary of how a few key variables drive high-risk classification.
 
 - Support Vector Machines (SVM)
 
@@ -301,6 +360,12 @@ mean(svm_pred == svm_data$high_risk)
 
 ```
 
+Support Vector Machines (SVM)
+SVM was used to classify high-risk sites by learning optimal boundaries between classes in a high-dimensional space. However, the model performed poorly, achieving only 51.8% accuracy, well below other methods.
+
+This result suggests that SVM may not be well-suited for this dataset, which includes many categorical predictors and imbalanced class structures. Additionally, tuning was limited, and kernel choice may have affected performance.
+
+While SVM is powerful in many contexts, simpler models like logistic regression and LDA were more effective and interpretable for this classification task.
 
 ### **Evaluation and Model Diagnostics**
 
@@ -325,8 +390,11 @@ cv_model_simplified
 
 ```
 
+To ensure reliable performance estimates, we used 10-fold cross-validation across both regression and classification models. For linear regression, the average RMSE was approximately 16, and the adjusted R² was 0.639, confirming consistent model performance across folds.
 
+For classification, cross-validation helped identify optimal hyperparameters—such as k = 5 in KNN—and validated the stability of models like logistic regression, LDA, and QDA.
 
+Cross-validation was essential in preventing overfitting and selecting models that generalize well to unseen data, reinforcing the credibility of our findings.
 
 
 - Jackknife and Bootstrap Resampling (for variability and bias)
@@ -343,7 +411,11 @@ boot_results
 
 ```
 
+We applied bootstrap resampling (R = 200) to assess the stability and variability of our linear regression estimates. The results confirmed that key predictors—such as year, region, and topic—had low standard errors and minimal bias, indicating reliable coefficient estimates.
 
+Some variables, particularly from the MPOWER category, consistently returned NA due to missing data or lack of variation, reinforcing the need for cautious interpretation.
+
+This resampling approach added confidence to our model's robustness by quantifying uncertainty and validating the significance of our findings.
 
 
 - RMSE, R², and Adjusted R² for regression diagnostics
@@ -364,6 +436,17 @@ list(
 
 
 ```
+To evaluate regression model performance, we calculated the Root Mean Squared Error (RMSE), R², and Adjusted R². Our best-performing linear model achieved:
+
+RMSE ≈ 16.02
+
+R² = 0.639
+
+Adjusted R² = 0.639
+
+These metrics indicate that our model explains roughly 64% of the variability in youth tobacco use, a strong result given the global scale and diversity of the data. The low RMSE suggests good predictive accuracy across survey sites.
+
+Overall, the model balances fit and generalizability effectively.
 
 - Accuracy, Precision, ROC-AUC for classification diagnostics
 
@@ -393,6 +476,18 @@ list(
 
 ```
 
+To assess classification model performance, we evaluated logistic regression using key metrics:
+
+Accuracy: 79.3%
+
+Precision: 68.7%
+
+ROC-AUC: 0.864
+
+These values reflect a strong model that not only classifies high-risk sites accurately but also distinguishes between classes with high confidence. The high AUC indicates excellent discriminative ability, while precision ensures that flagged high-risk sites are likely to be truly at risk.
+
+Together, these diagnostics confirm that logistic regression is both reliable and interpretable for guiding global tobacco control strategies.
+
 - Variance Inflation Factor (VIF) to detect multicollinearity
 
 ```{r}
@@ -403,6 +498,11 @@ linear_model_simple <- lm(Data_Value ~ Year + WHO_Region + Mpower + Sample_Size 
 vif(linear_model_simple)
 
 ```
+
+To check for multicollinearity among predictors in our regression model, we calculated Variance Inflation Factors (VIF). All VIF values were well below the common threshold of 5, with the highest around 1.12, indicating no serious multicollinearity concerns.
+
+This suggests that our predictor variables—such as year, region, MPOWER policies, sample size, and sex—provide unique and independent contributions to the model, supporting the validity and stability of the regression estimates.
+
 
 - Feature selection via Lasso, stepwise selection, and PCA
 
@@ -436,6 +536,15 @@ summary(step_model)
 
 ```
 
+We applied three feature selection techniques to simplify our models and highlight the most impactful predictors:
+
+Lasso Regression automatically removed uninformative variables, retaining only those with strong predictive power—like year, region, and topic.
+
+Stepwise AIC Selection narrowed the linear model to include year, WHO region, topic, and sex, improving interpretability without sacrificing accuracy.
+
+Principal Component Analysis (PCA) confirmed that most variance could be captured using just two components, primarily driven by year and sample size.
+
+These methods enhanced model efficiency, reduced overfitting risk, and reinforced the importance of key features across different modeling approaches.
 
 ---
 
@@ -458,6 +567,9 @@ summary(step_model)
 | Missing data or unbalanced regional sampling           | Imputation, region grouping, stratified sampling          |
 | Overfitting due to high-dimensional predictors          | Regularization (Ridge, Lasso), cross-validation           |
 | Arbitrary classification cutoffs (e.g., 15% threshold) | Perform sensitivity analysis using multiple thresholds    |
+
+## Conclusion 
+Our analysis of the Global Youth Tobacco Survey revealed clear patterns in youth smoking behavior worldwide. Tobacco use has steadily declined over time, with significant variation by region, gender, and public health policy. Models like logistic regression and LDA proved effective in identifying high-risk areas, achieving over 79% accuracy and strong AUC performance. These insights support evidence-based strategies for global tobacco control and offer a data-driven approach to prioritizing prevention efforts among vulnerable youth populations.
 
 
 
