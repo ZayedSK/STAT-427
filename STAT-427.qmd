@@ -4,21 +4,534 @@ format: revealjs
 editor: visual
 ---
 
-## Quarto
+---
+title: "STAT 427 Project Final"
+author: "Ethan Pastel"
+date: "2025-04-17"
+output: html_document
+---
 
-Quarto enables you to weave together content and executable code into a finished presentation. To learn more about Quarto presentations see <https://quarto.org/docs/presentations/>.
 
-## Bullets
+# Topic
 
-When you click the **Render** button a document will be generated that includes:
+Analyzing global trends and risk factors associated with youth tobacco use by applying statistical learning techniques to predict smoking prevalence and identify high-risk populations and regions.
 
--   Content authored with markdown
--   Output from executable code
+# Dataset
+Global Youth Tobacco Survey (GYTS) – CDC & WHO
 
-## Code
+# Research Purpose and Questions
+What country-level and policy-related factors best predict the prevalence of youth tobacco use?
 
-When you click the **Render** button a presentation will be generated that includes both content and the output of embedded code. You can embed code like this:
+# Can we classify countries or survey sites as high-risk (≥15% prevalence) using policy and regional data?
+
+# Literature Review
+
+- Ethan – WHO (2021): Global Tobacco Epidemic Report
+
+- Layne – CDC (2022): Youth Tobacco Use Stats
+
+- Zayed – The Lancet (2018): European Tobacco Policy Study
+
+
 
 ```{r}
-1 + 1
+library(tidyverse)
+library(caret)
+library(glmnet)
+library(leaps)
+library(e1071)
+library(MASS)
+library(ISLR2)
+library(boot)
+library(pROC)
+library(ROCR)
+library(GGally)
+
+library(readr)
+Global_Tobacco_Surveillance_System <- read_csv("C:/Users/cmpas/Downloads/Global_Tobacco_Surveillance_System__GTSS__-_Global_Youth_Tobacco_Survey__GYTS__20250417.csv")
+
+# Cleaning up the data set with revelent variables only
+
+gyts_clean <- Global_Tobacco_Surveillance_System %>%
+  dplyr::select(Year, WHO_Region, Country, SurveySite, Topic, Mpower, Indicator,
+                Data_Value, Low_Confidence_Limit, High_Confidence_Limit, Sample_Size, Sex) %>%
+  drop_na(Data_Value) %>%
+  mutate(across(c(WHO_Region, Country, SurveySite, Topic, Mpower, Sex), as.factor))
+
+glimpse(gyts_clean)
+summary(gyts_clean$Data_Value)
+
+
+ggplot(gyts_clean, aes(x = Data_Value)) +
+  geom_histogram(fill = "steelblue", bins = 40) +
+  labs(title = "Distribution of Youth Tobacco Use", x = "Tobacco Use (%)")
+
+ggplot(gyts_clean, aes(x = Year, y = Data_Value, color = WHO_Region)) +
+  geom_point(alpha = 0.4) +
+  geom_smooth(method = "loess", se = FALSE) +
+  labs(title = "Youth Tobacco Use Over Time by Region")
+
 ```
+
+
+
+
+
+
+## Data Assessment and Preparation
+
+**Dataset**: Global Youth Tobacco Survey (GYTS)  
+**Source**: CDC and WHO  
+**Years Covered**: 1999–2018  
+**Initial Observations**: 30,535 rows  
+**Post-Cleaning Observations**: 25,048 rows  
+**Variables Used**: 12 selected out of 27 original variables  
+**Structure**: Time-series panel data with geographic and demographic granularity.
+
+### Data Characteristics
+- Mix of categorical (e.g., Region, Country, Topic, Sex, MPOWER) and numerical variables (e.g., Data_Value, Year, Sample_Size).
+- Categorical variables converted to factors for modeling.
+- Some missing values handled via listwise deletion (`drop_na(Data_Value)`).
+- Regional variation and imbalance noted; addressed in modeling via stratification or grouping.
+- Data is well suited for supervised learning (regression and classification).
+
+### Data Cleaning
+- Removed all rows with missing values in the response variable `Data_Value`.
+- Converted `WHO_Region`, `Country`, `SurveySite`, `Topic`, `Mpower`, and `Sex` into factor types.
+- Retained only essential modeling columns: `Year`, `WHO_Region`, `Country`, `SurveySite`, `Topic`, `Mpower`, `Indicator`, `Data_Value`, `Low_Confidence_Limit`, `High_Confidence_Limit`, `Sample_Size`, and `Sex`.
+
+
+
+
+
+
+
+```{r}
+
+gyts_clean <- gyts_clean %>%
+  mutate(high_risk = factor(ifelse(Data_Value >= 15, "Yes", "No")))
+
+table(gyts_clean$high_risk)
+
+```
+
+
+
+
+### Planned Statistical Methods
+
+**Regression Methods**
+
+- Linear Regression
+
+```{r}
+
+linear_model <- lm(Data_Value ~ Year + WHO_Region + Topic + Mpower + Sample_Size + Sex, data = gyts_clean)
+
+summary(linear_model)
+
+```
+
+- Polynomial Regression (pending feature transformation)
+
+```{r}
+
+poly_model <- lm(Data_Value ~ poly(Year, 2) + WHO_Region + Topic + Mpower + Sample_Size + Sex, data = gyts_clean)
+
+summary(poly_model)
+
+```
+
+- Ridge & Lasso Regression 
+
+```{r}
+
+model_data <- gyts_clean %>% drop_na(Mpower)
+
+X <- model.matrix(Data_Value ~ Year + WHO_Region + Topic + Mpower + Sample_Size + Sex, data = model_data)[,-1]
+y <- model_data$Data_Value
+
+# Ridge
+ridge_cv <- cv.glmnet(X, y, alpha = 0)
+plot(ridge_cv)
+ridge_cv$lambda.min
+
+# Lasso
+lasso_cv <- cv.glmnet(X, y, alpha = 1)
+plot(lasso_cv)
+lasso_cv$lambda.min
+coef(lasso_cv, s = "lambda.min")
+
+
+```
+
+
+- Principal Components Regression (PCR)
+
+```{r}
+library(pls)
+set.seed(142)
+
+pcr_data <- gyts_clean %>%
+  drop_na(Year, WHO_Region, Topic, Mpower, Sample_Size, Sex)
+
+# Step 2: Drop unused factor levels to avoid issues in model matrix creation
+pcr_data <- pcr_data %>%
+  droplevels()
+
+# Step 3: Fit PCR model safely
+pcr_model <- pcr(Data_Value ~ Year + WHO_Region + Topic + Mpower + Sample_Size + Sex, 
+                 data = pcr_data,
+                 scale = TRUE,
+                 validation = "CV")
+
+summary(pcr_model)
+
+```
+
+- Partial Least Squares Regression (PLSR)
+
+```{r}
+
+plsr_data <- gyts_clean %>%
+  drop_na(Year, WHO_Region, Topic, Mpower, Sample_Size, Sex)
+
+plsr_data <- droplevels(plsr_data)
+
+plsr_model <- plsr(Data_Value ~ Year + WHO_Region + Topic + Mpower + Sample_Size + Sex, 
+                   data = plsr_data,
+                   scale = TRUE,
+                   validation = "CV")
+
+summary(plsr_model)
+
+```
+
+
+
+
+**Classification Methods**
+
+
+- Logistic Regression
+
+```{r}
+
+logit_model <- glm(high_risk ~ Year + WHO_Region + Topic + Mpower + Sample_Size + Sex,
+                   data = gyts_clean, family = "binomial")
+summary(logit_model)
+
+```
+
+- K-Nearest Neighbors (KNN)
+
+```{r}
+
+set.seed(42)
+gyts_knn <- gyts_clean %>% drop_na(Mpower)
+
+knn_model <- train(high_risk ~ Year + WHO_Region + Topic + Mpower + Sample_Size + Sex,
+                   data = gyts_knn,
+                   method = "knn",
+                   tuneLength = 10,
+                   trControl = trainControl(method = "cv", number = 10))
+knn_model
+
+```
+
+- Linear Discriminant Analysis (LDA)
+
+```{r}
+lda_data <- gyts_clean %>%
+  drop_na(high_risk, Year, WHO_Region, Mpower, Sample_Size) %>%
+  droplevels()
+
+lda_model <- lda(high_risk ~ Year + WHO_Region + Mpower + Sample_Size, data = lda_data)
+
+lda_pred <- predict(lda_model)$class
+mean(lda_pred == lda_data$high_risk)
+
+```
+
+- Quadratic Discriminant Analysis (QDA)
+
+```{r}
+
+qda_model <- qda(high_risk ~ Year + WHO_Region + Mpower + Sample_Size, data = lda_data)
+qda_pred <- predict(qda_model)$class
+mean(qda_pred == lda_data$high_risk)
+
+```
+
+- Classification Trees
+
+```{r}
+library(tree)
+
+tree_data <- gyts_clean %>%
+  drop_na(high_risk, Year, WHO_Region, Topic, Mpower, Sample_Size, Sex) %>%
+  droplevels()
+
+tree_model <- tree(high_risk ~ Year + WHO_Region + Topic + Mpower + Sample_Size + Sex, 
+                   data = tree_data)
+
+summary(tree_model)
+plot(tree_model)
+text(tree_model, pretty = 0)
+
+```
+
+- Support Vector Machines (SVM)
+
+```{r}
+
+svm_data <- gyts_clean %>%
+  drop_na(high_risk, Year, WHO_Region, Topic, Mpower, Sample_Size, Sex) %>%
+  droplevels()
+
+# Fit model
+svm_model <- svm(high_risk ~ Year + WHO_Region + Topic + Mpower + Sample_Size + Sex,
+                 data = svm_data)
+
+# Predict on same data
+svm_pred <- predict(svm_model, newdata = svm_data)
+
+# Compare predictions properly
+mean(svm_pred == svm_data$high_risk)
+
+```
+
+
+### **Evaluation and Model Diagnostics**
+
+- K-Fold Cross-Validation for tuning and performance
+
+```{r}
+set.seed(123)
+
+# Remove rows with missing values in any variables used in the model
+cv_data <- gyts_clean %>%
+  drop_na(Data_Value, Year, WHO_Region, Topic, Mpower, Sample_Size, Sex)
+
+# Perform 10-fold CV using caret
+cv_model_simplified <- train(
+  Data_Value ~ Year + WHO_Region + Mpower + Sample_Size + Sex,
+  data = cv_data,
+  method = "lm",
+  trControl = trainControl(method = "cv", number = 10)
+)
+cv_model_simplified
+
+
+```
+
+
+
+
+
+- Jackknife and Bootstrap Resampling (for variability and bias)
+
+```{r}
+
+boot_fn <- function(data, index) {
+  coef(lm(Data_Value ~ Year + WHO_Region + Topic + Mpower + Sample_Size + Sex, data = data, subset = index))
+}
+set.seed(1)
+boot_results <- boot(gyts_clean, boot_fn, R = 200)
+boot_results
+
+
+```
+
+
+
+
+- RMSE, R², and Adjusted R² for regression diagnostics
+
+```{r}
+
+reg_summary <- summary(linear_model)
+rmse <- sqrt(mean(linear_model$residuals^2))
+r2 <- reg_summary$r.squared
+adj_r2 <- reg_summary$adj.r.squared
+
+list(
+  RMSE = rmse,
+  R2 = r2,
+  Adjusted_R2 = adj_r2
+)
+
+
+
+```
+
+- Accuracy, Precision, ROC-AUC for classification diagnostics
+
+```{r}
+logit_data <- gyts_clean %>%
+  drop_na(high_risk, Year, WHO_Region, Topic, Mpower, Sample_Size, Sex) %>%
+  droplevels()
+
+logit_model <- glm(high_risk ~ Year + WHO_Region + Topic + Mpower + Sample_Size + Sex,
+                   data = logit_data,
+                   family = "binomial")
+
+logit_probs <- predict(logit_model, type = "response")
+logit_pred_class <- ifelse(logit_probs > 0.5, "Yes", "No") |> factor(levels = c("No", "Yes"))
+
+roc_obj <- roc(logit_data$high_risk, logit_probs)
+
+# Step 5: Confusion Matrix
+conf_matrix <- confusionMatrix(logit_pred_class, logit_data$high_risk)
+
+# Step 6: Return metrics
+list(
+  AUC = auc(roc_obj),
+  Accuracy = conf_matrix$overall["Accuracy"],
+  Precision = conf_matrix$byClass["Pos Pred Value"]
+)
+
+```
+
+- Variance Inflation Factor (VIF) to detect multicollinearity
+
+```{r}
+
+linear_model_simple <- lm(Data_Value ~ Year + WHO_Region + Mpower + Sample_Size + Sex, data = gyts_clean)
+
+# Check VIF
+vif(linear_model_simple)
+
+```
+
+- Feature selection via Lasso, stepwise selection, and PCA
+
+
+```{r}
+
+step_data <- gyts_clean %>%
+  drop_na(Data_Value, Year, WHO_Region, Topic, Mpower, Sample_Size, Sex) %>%
+  droplevels()
+
+# Fit linear model on clean data
+linear_model_step <- lm(Data_Value ~ Year + WHO_Region + Topic + Mpower + Sample_Size + Sex,
+                        data = step_data)
+
+# Stepwise AIC selection
+step_model <- stepAIC(linear_model_step, direction = "both")
+
+
+
+pca_data <- step_data %>%
+  dplyr::select(Year, Sample_Size) %>%
+  drop_na()
+
+# PCA
+pca_result <- prcomp(pca_data, scale. = TRUE)
+
+
+
+summary(pca_result)
+summary(step_model)
+
+```
+
+
+---
+
+
+
+
+## Ethical Considerations
+
+- Dataset is anonymized but involves minors. Interpretation of results must avoid stigmatization.
+- Country-level comparisons must be contextualized and avoid cultural bias.
+- Modeling recommendations are exploratory and meant to support — not replace — public health expertise.
+- Classifications into "high-risk" must be used with care and framed for responsible policy application.
+
+---
+
+## Risks and Mitigations
+
+| Risk                                                   | Mitigation Strategy                                       |
+|--------------------------------------------------------|-----------------------------------------------------------|
+| Missing data or unbalanced regional sampling           | Imputation, region grouping, stratified sampling          |
+| Overfitting due to high-dimensional predictors          | Regularization (Ridge, Lasso), cross-validation           |
+| Arbitrary classification cutoffs (e.g., 15% threshold) | Perform sensitivity analysis using multiple thresholds    |
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
