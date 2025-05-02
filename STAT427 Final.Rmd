@@ -1,0 +1,200 @@
+---
+title: "Global Youth Tobacco Use: Modeling Risk and Predicting Smoking Behavior"
+author: |
+  Ethan Pastel (STAT 427), Layne DiBuono (STAT 627), Zayed Alketbi (STAT 427)
+date: "2025-04-17"
+output:
+  posterdown::posterdown_html:
+    self_contained: true
+    css: ["poster-jacobs"]
+    fontsize: 20pt
+    geometry: margin=0.25in
+---
+
+```{r setup, include=FALSE, warning=FALSE, message=FALSE}
+library(tidyverse)
+library(caret)
+library(glmnet)
+library(leaps)
+library(e1071)
+library(MASS)
+library(ISLR2)
+library(boot)
+library(pROC)
+library(ROCR)
+library(GGally)
+library(car)
+library(readr)
+library(tree)
+library(pls)
+library(posterdown)
+```
+
+# Research Topic and Purpose
+
+Tobacco use remains one of the leading preventable causes of illness and premature death worldwide. Initiating tobacco use during adolescence significantly raises the risk of addiction and long-term health consequences. Despite widespread public health campaigns, millions of youth begin smoking by age 13–15.
+
+The Global Youth Tobacco Survey (GYTS) offers over two decades of internationally standardized data on tobacco use behaviors in youth. This dataset includes 30,000+ records across countries, capturing regional, demographic, and policy-related information. Our analysis seeks to:
+
+- **Identify the most influential predictors of youth tobacco prevalence across countries and time**
+- **Classify countries or regions as high-risk based on survey and policy indicators**
+
+We aim to:
+- Inform stakeholders (e.g., WHO, CDC) by evaluating which MPOWER strategies are most effective
+- Support prevention strategies through evidence-based targeting of at-risk populations
+- Encourage early intervention and strategic resource allocation, especially in lower-income regions
+
+# Executive Summary
+
+This project investigates global trends in youth tobacco use and identifies the most impactful predictors and regional risks using the Global Youth Tobacco Survey (GYTS). Our main objective is to model youth tobacco prevalence and classify survey sites as high-risk (≥15%) using statistical learning. We implemented a rigorous, multi-method approach using regression and classification techniques to support actionable public health insights. We found strong evidence that youth tobacco use is declining globally, especially in regions with robust public health policies. However, disparities persist by region, sex, and media exposure. Our models—particularly logistic regression, LDA, and lasso—offer highly interpretable and accurate predictions, and can support prioritization efforts for prevention policies and resource allocation. This analysis not only reveals the critical factors behind youth smoking but provides a data-driven roadmap for improving global tobacco control efforts.
+
+Youth tobacco use remains a global public health challenge. Leveraging the Global Youth Tobacco Survey, we applied a suite of statistical learning models to identify key predictors and classify high-risk regions. Our analysis reveals significant declines in youth tobacco use over time, but notable disparities persist across regions, genders, and policy environments. Key methods like logistic regression, LDA, and lasso regression yielded over 79% classification accuracy. These insights can guide targeted policy interventions and monitoring efforts worldwide.
+
+# Dataset and Cleaning
+
+**Source**: CDC & WHO GYTS database (1999–2018)  
+**Structure**: Panel data with country, region, and demographic details (n = 30,535)  
+**Challenges**: Missing values in `Data_Value`, factor encoding of categorical variables, variable inconsistency across years.
+
+```{r load-clean, echo=FALSE}
+Global_Tobacco_Surveillance_System <- read_csv(
+  "C:/Users/cmpas/Downloads/Global_Tobacco_Surveillance_System__GTSS__-_Global_Youth_Tobacco_Survey__GYTS__20250417.csv",
+  show_col_types = FALSE
+)
+
+gyts_clean <- Global_Tobacco_Surveillance_System[,
+  intersect(c("Year", "WHO_Region", "Country", "SurveySite", "Topic", "Mpower", "Indicator",
+              "Data_Value", "Low_Confidence_Limit", "High_Confidence_Limit", "Sample_Size", "Sex"),
+            names(Global_Tobacco_Surveillance_System))]
+
+gyts_clean <- gyts_clean %>%
+  drop_na(Data_Value) %>%
+  mutate(across(any_of(c("WHO_Region", "Country", "SurveySite", "Topic", "Mpower", "Sex")), as.factor)) %>%
+  mutate(high_risk = factor(ifelse(Data_Value >= 15, "Yes", "No")))
+```
+
+# Literature Review
+
+- **Ethan** – WHO (2021): *Global Tobacco Epidemic Report* — provided global MPOWER policy implementation data and patterns across regions.
+- **Layne** – CDC (2022): *Youth Tobacco Use Stats* — emphasized behavioral patterns among U.S. youth and the role of school-based interventions.
+- **Zayed** – The Lancet (2018): *European Tobacco Policy Study* — examined the association between tobacco control policies and youth smoking onset in Europe.
+
+# Analysis Methods
+
+### Regression Models Used:
+- **Linear Regression**: Interpretable baseline model (R² ≈ 0.64)
+- **Polynomial Regression**: Captured nonlinear decline trends over time
+- **Lasso Regression**: Performed feature selection, removing non-contributing predictors
+
+### Classification Models Used:
+- **Logistic Regression**: High AUC (0.86), accuracy ≈ 79%
+- **Linear Discriminant Analysis (LDA)**: Matched logistic regression accuracy
+- **K-Nearest Neighbors (KNN)**: Tuned via cross-validation, accuracy ≈ 65%
+
+### Model Diagnostics and Evaluation:
+
+# Expanded Interpretation of Findings
+
+The decline in tobacco use among youth is most prominent in regions with consistent implementation of public health measures, particularly MPOWER policies. Our models confirm that time (year) is a key driver of decreasing prevalence, validating global efforts to combat youth smoking. However, the persistently higher prevalence in the European and Western Pacific regions signals regional disparities in policy enforcement and education.
+
+Gender differences were clear: females consistently reported lower tobacco use, aligning with historical trends but also highlighting potential gaps in gender-targeted interventions. Survey topics related to advertising exposure or anti-smoking messaging had strong predictive power, emphasizing the impact of media on youth behavior.
+
+From a policy standpoint, classification models like LDA and logistic regression allowed us to isolate high-risk countries, providing a clear and statistically sound framework for global tobacco control agencies to prioritize interventions.
+
+Ridge and lasso regression models further validated our selection of key variables while reducing the risk of overfitting. These methods also clarified that while some variables (like sample size or specific indicators) added noise, others—like topic and region—consistently enhanced predictive accuracy.
+- **Cross-validation**: 10-fold CV for tuning (e.g., λ in lasso, k in KNN)
+- **Bootstrap**: Validated coefficient stability in regression
+- **Confusion Matrices, ROC Curves**: Evaluated classification performance
+
+# Key Results and Visuals
+
+To support our core questions—identifying influential predictors and classifying high-risk countries—we visualized model predictions and variable importance across several statistical learning methods. These plots help reinforce the observed patterns and model decisions.
+
+```{r visuals, echo=FALSE, warning=FALSE, message=FALSE, results='hide', fig.height=3.5, fig.width=5}
+ggplot(gyts_clean, aes(x = Data_Value)) +
+  geom_histogram(fill = "steelblue", bins = 40) +
+  labs(title = "Distribution of Youth Tobacco Use", x = "Tobacco Use (%)")
+
+ggplot(gyts_clean, aes(x = Year, y = Data_Value, color = WHO_Region)) +
+  geom_point(alpha = 0.4) +
+  geom_smooth(method = "loess", se = FALSE) +
+  labs(title = "Tobacco Use Over Time by Region")
+```
+
+```{r top-graphics, echo=FALSE, warning=FALSE, message=FALSE, results='hide', fig.width=6, fig.height=3.5}
+# Boxplot by WHO Region
+p1 <- ggplot(gyts_clean, aes(x = WHO_Region, y = Data_Value)) +
+  geom_boxplot(fill = "tomato") +
+  labs(title = "Tobacco Use by WHO Region", x = "Region", y = "Tobacco Use (%)") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Tobacco Use by Survey Topic
+p2 <- ggplot(gyts_clean, aes(x = Topic, y = Data_Value)) +
+  geom_boxplot(fill = "skyblue") +
+  labs(title = "Youth Tobacco Use by Survey Topic", x = "Topic", y = "Tobacco Use (%)") +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+
+# High-Risk Classifications by Region
+p3 <- ggplot(gyts_clean, aes(x = high_risk, fill = WHO_Region)) +
+  geom_bar(position = "dodge") +
+  labs(title = "High-Risk Sites by Region", x = "High Risk (>=15%)", y = "Count")
+
+# Average Tobacco Use by Year
+p4 <- gyts_clean %>%
+  group_by(Year) %>%
+  summarize(avg_use = mean(Data_Value)) %>%
+  ggplot(aes(x = Year, y = avg_use)) +
+  geom_line(size = 1.2, color = "darkgreen") +
+  geom_point() +
+  labs(title = "Average Youth Tobacco Use Over Time", y = "Average Tobacco Use (%)")
+
+# Display plots
+p1
+p2
+p3
+p4
+```
+
+# Stakeholders and Ethical Considerations
+
+**Stakeholders**: WHO, CDC, Ministries of Health, educators, parents, youth-focused NGOs.  
+**Ethical Notes**:
+- Data involves minors: privacy and responsible classification are essential
+- Avoid stigmatizing high-risk countries or demographics
+- Use results for policy guidance, not punitive action
+
+# Summary of Findings
+
+Our findings confirm that statistical learning can effectively uncover nuanced global patterns in youth tobacco use and guide public health strategies. Key insights include:
+- A clear global decline in youth tobacco use, strongest in regions implementing MPOWER policies.
+- Significant gender disparity, with females consistently reporting lower tobacco use.
+- The strongest predictors across all models were `Year`, `WHO_Region`, `Topic`, and `Sex`.
+- Public health policy presence and exposure to pro- or anti-tobacco content significantly influenced youth behavior.
+- Model accuracy: Logistic Regression and LDA achieved ≈79%, KNN at 65%, and Ridge/Lasso regression improved prediction reliability by reducing overfitting.
+- Bootstrap and cross-validation techniques confirmed model robustness and generalizability.
+
+These results provide a foundation for policy targeting and long-term global monitoring efforts.
+
+- Youth tobacco use is declining overall but varies by region, sex, and policy strength
+- MPOWER policies, region, topic, and gender are the most significant predictors
+- Ridge/Lasso improved model interpretability without compromising accuracy
+
+# Recommendations
+
+Based on our findings, we propose the following:
+
+- **Targeted Policy Reinforcement**: Regions with persistently high tobacco use, particularly the European and Western Pacific areas, should receive enhanced support for enforcing MPOWER policies. 
+- **Media and Messaging Interventions**: Given the influence of advertising exposure and educational content, invest in anti-tobacco campaigns that specifically counter pro-smoking media.
+- **Gender-Specific Prevention**: Tailor prevention programs to address gender differences in tobacco uptake, including early outreach to young boys and culturally relevant engagement for girls.
+- **Model-Driven Monitoring**: Use predictive models (logistic regression, LDA) for early detection of high-risk regions and enable preemptive resource allocation.
+- **Expand Data Integration**: Encourage countries to improve survey completeness and consistency so that predictive models can be refined and validated across broader regions.
+
+By implementing these strategies, public health organizations can not only curb youth tobacco use more effectively, but also improve the equity and precision of their tobacco control programs. and monitoring in regions with persistently high usage
+- Use classification models (e.g., logistic regression, LDA) to flag high-risk zones for intervention
+
+# References
+
+- WHO (2021). *Global Tobacco Epidemic Report*  
+- CDC (2022). *Youth Tobacco Use Stats*  
+- The Lancet (2018). *European Tobacco Policy Study*  
+- James, Witten, Hastie & Tibshirani (2021). *An Introduction to Statistical Learning*
